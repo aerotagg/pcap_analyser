@@ -1,0 +1,6 @@
+/quarantine
+/pcap-captures
+
+# Ignore all Output Files
+Raw_Traffic_Data.csv
+Traffic_Summaries.xlsx

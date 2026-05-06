@@ -6,9 +6,12 @@ Unlike standard parsers, this tool is designed for scale and safety, featuring a
 
 ## ✨ Key Features
 
+* **Dynamic Incident Dashboard & Attack Timeline:** Automatically generates an executive summary and a chronological timeline of the attack (e.g., tracing from the first cleartext transmission, to port scans, to C2 beaconing).
 * **Advanced Threat Hunting Heuristics:**
+  * **Reconnaissance & Port Scanning:** Detects network sweeps by identifying source IPs sending SYN packets to large numbers of unique destination ports.
   * **C2 Beacon Detection:** Mathematically analyzes conversation timing and packet sizes to flag highly consistent, automated beaconing behavior.
   * **DGA / DNS Anomaly Detection:** Flags internal hosts generating excessive `NXDomain` responses, a common indicator of malware searching for command-and-control servers.
+* **Cleartext Vulnerability Flagging:** Automatically isolates and flags insecure cleartext protocols (e.g., FTP, Telnet, HTTP) to identify weak endpoints.
 * **TLS Fingerprinting (JA3):** Extracts JA3 hashes from TLS handshakes, allowing analysts to identify malicious scripts or non-standard clients hiding inside encrypted HTTPS traffic.
 * **Automated & Safe File Carving:** Silently extracts files transferred over HTTP and SMB. To prevent accidental execution and bypass Windows filesystem errors with malicious URIs, extracted files are automatically hashed (SHA256) and safely renamed to their hash with a `.bin` extension.
 * **Massive PCAP Handling:** Automatically detects files larger than 200MB. It utilizes Wireshark's `editcap` to split the file into smaller chunks and processes them simultaneously across multiple CPU cores using Python's `concurrent.futures`.
@@ -22,7 +25,7 @@ This tool is currently configured for **Windows** environments.
 2. **Wireshark:** Must be installed in the default directory (`C:\Program Files\Wireshark\`). The script relies on `tshark.exe` and `editcap.exe`.
 3. **Python Libraries:**
    ```bash
-   pip install pandas openpyxl
+   pip install -r requirements.txt
 
 ## 🚀 Installation & Setup
 Ensure you have a fields.txt file in the same directory as the script. This file dictates exactly what data tshark will extract.
@@ -44,6 +47,7 @@ python pcap_analyzer.py -i /pcap-captures/incident_capture.pcap
 
 *Advanced Usage (Custom Config & Output Name):*
 python pcap_analyzer.py -i incident_capture.pcap -c custom_fields.txt -o Client_Report_Q3.xlsx
+
 Command Line Arguments
 -i, --input: (Required) Path to the input .pcap or .pcapng file.
 
@@ -59,7 +63,8 @@ The tool generates three primary artifacts:
 **/quarantine/ Directory:** Contains any files carved from the network traffic, safely renamed to <SHA256-hash>.bin.
 
 **Traffic_Summaries.xlsx:** A multi-tabbed Excel report designed for client presentations and quick analyst review.
-
+*    **📊 Executive Overview:** A dynamic summary of metrics and a chronological timeline of detected threats.
+*    **🕵️ Recon & Scanning:** Hosts identified conducting port scans or network sweeps.
 *    **🚨 Suspected Beacons:** Hosts exhibiting strict, repetitive timing intervals.
 *    **🚨 DNS Anomalies:** Hosts with high counts of failed DNS queries.
 *    **🔍 JA3 TLS Fingerprints:** Aggregated JA3 hashes for threat intel cross-referencing.

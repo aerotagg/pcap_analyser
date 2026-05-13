@@ -161,6 +161,42 @@ def generate_incident_summary(df):
             
     return dns_anomalies, beacons, ja3_stats, cleartext_df, port_scans
 
+def infer_os_from_ttl_window(df):
+    """Basic OS fingerprinting using TTL value."""
+    
+    os_fingerprints = []
+
+    if not all(col in df.columns for col in ['Src IP', 'TTL']):
+        return pd.DataFrame()
+
+    grouped = df.groupby('Src IP').agg({
+        'TTL': 'median'
+    }).reset_index()
+
+    for _, row in grouped.iterrows():
+        ttl = row['TTL']
+        os_guess = "Unknown"
+
+        # Normalize TTL (estimate original TTL)
+        if ttl <= 64:
+            base_ttl = 64
+            os_guess = "Linux"
+        elif ttl <= 128:
+            base_ttl = 128
+            os_guess = "Windows"
+        else:
+            base_ttl = 255
+            os_guess = "Network Device (Cisco/Unix)"            
+
+        os_fingerprints.append({
+            "Src IP": row['Src IP'],
+            "Observed TTL": ttl,
+            "Estimated Base TTL": base_ttl,
+            "Likely OS": os_guess
+        })
+
+    return pd.DataFrame(os_fingerprints)
+
 def process_and_split_data(raw_dataframe, final_csv_path, summary_excel_path, carved_files_df, pcap_filename):
     """Cleans the massive combined DataFrame and generates reports."""
     print("[*] Loading and cleaning combined data with Pandas...")
@@ -178,6 +214,15 @@ def process_and_split_data(raw_dataframe, final_csv_path, summary_excel_path, ca
     if 'ip.len' in df.columns:
         df['ip.len'] = pd.to_numeric(df['ip.len'], errors='coerce').fillna(0)
         
+    # Normalize TCP window size 
+    if 'tcp.window_size_value' in df.columns:
+        df['TCP Window Size'] = df['tcp.window_size_value']
+    elif 'tcp.window_size' in df.columns:
+        df['TCP Window Size'] = df['tcp.window_size']
+    # Rename TTL
+    if 'ip.ttl' in df.columns:
+        df = df.rename(columns={'ip.ttl': 'TTL'})
+
     rename_map = {
         'ip.src': 'Src IP', 'ip.dst': 'Dst IP',
         'eth.src': 'Src MAC', 'eth.dst': 'Dst MAC',
@@ -191,6 +236,8 @@ def process_and_split_data(raw_dataframe, final_csv_path, summary_excel_path, ca
     print(f"[*] Saving raw data to {final_csv_path}...")
     df.to_csv(final_csv_path, index=False)
     
+    os_fingerprint_df = infer_os_from_ttl_window(df)
+
     print(f"[*] Generating summaries & timeline dashboard to {summary_excel_path}...")
     with pd.ExcelWriter(summary_excel_path, engine='openpyxl') as writer:
         
@@ -298,6 +345,10 @@ def process_and_split_data(raw_dataframe, final_csv_path, summary_excel_path, ca
                 
         if 'Host' in df.columns:
             df.dropna(subset=['Host'])['Host'].value_counts().reset_index(name='Occurrence Count').rename(columns={'Host': 'Resolved Host / Domain'}).to_excel(writer, sheet_name='Resolved Hosts', index=False)
+
+        
+        if not os_fingerprint_df.empty: 
+            os_fingerprint_df.to_excel(writer, sheet_name='OS Fingerprinting', index=False)
             
     print("[+] All reports generated successfully!")
 

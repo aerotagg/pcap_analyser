@@ -17,3 +17,4 @@ tcp.flags.syn
 tcp.flags.ack
 tcp.flags.reset
 _ws.col.Info
+ip.ttl

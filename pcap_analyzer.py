@@ -9,9 +9,6 @@ import concurrent.futures
 import zipfile 
 from openpyxl.styles import Font
 
-
-
-
 def unzip_pcap(zipped_pcap):
     """Extracts the ZIP file containing the PCAP file."""
 

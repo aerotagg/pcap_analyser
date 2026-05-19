@@ -6,16 +6,35 @@ import hashlib
 import glob
 import shutil
 import concurrent.futures
+import zipfile 
 from openpyxl.styles import Font
 
-def load_fields_from_config(config_path):
+def unzip_pcap(zipped_pcap):
+    """Extracts the ZIP file containing the PCAP file."""
+
+    if not os.path.exists(zipped_pcap):
+        raise FileNotFoundError(f"ZIP file not found: {zipped_pcap}")
+
+    # Get the directory containing the zipped pcap
+    extract_to = os.path.dirname(zipped_pcap)
+
+    # Extract pcap
+    with zipfile.ZipFile(zipped_pcap, 'r') as zip_ref:
+        zip_ref.extractall(extract_to)
+
+        # Get the name of the first file inside ZIP (the pcap file)
+        extracted_pcap = zip_ref.namelist()[0]
+
+    return os.path.join(extract_to, extracted_pcap)
+
+def load_fields_from_config(config_path): 
     if not os.path.exists(config_path):
         print(f"[!] Config file not found: {config_path}")
         return None
     with open(config_path, 'r') as file:
         return [line.strip() for line in file if line.strip() and not line.startswith('#')]
 
-# --- FEATURE 4: AUTOMATED FILE CARVING & HASHING ---
+# --- AUTOMATED FILE CARVING & HASHING ---
 def carve_and_hash_files(pcap_file, quarantine_dir="quarantine"):
     """Extracts files from HTTP/SMB streams and calculates their SHA256 hashes safely."""
     print(f"[*] Carving HTTP/SMB objects into '{quarantine_dir}' folder...")
@@ -40,11 +59,11 @@ def carve_and_hash_files(pcap_file, quarantine_dir="quarantine"):
             filepath = os.path.join(root, file)
             
             try:
-                # 1. Read the file and calculate the hash
+                # Read the file and calculate the hash
                 with open(filepath, "rb") as f:
                     file_hash = hashlib.sha256(f.read()).hexdigest()
                 
-                # 2. Rename the file to its hash to prevent Windows errors later
+                # Rename the file to its hash to prevent Windows errors later
                 safe_filename = f"{file_hash}.bin"
                 safe_filepath = os.path.join(root, safe_filename)
                 
@@ -63,7 +82,7 @@ def carve_and_hash_files(pcap_file, quarantine_dir="quarantine"):
                 })
                 
             except Exception as e:
-                # If Windows completely blocks access (Errno 22), log it and move on!
+                # If Windows completely blocks access (Errno 22), log it and move on
                 print(f"    [!] Skipping unreadable file '{file}': {e}")
                 extracted_files.append({
                     "Original Malicious Name": file,
@@ -281,7 +300,7 @@ def process_and_split_data(raw_dataframe, final_csv_path, summary_excel_path, ca
         # ==========================================
         capture_duration = df['Time'].max() - df['Time'].min() if 'Time' in df.columns else "Unknown"
         
-        # 1. Start with the baseline metrics that apply to EVERY PCAP
+        # Start with the baseline metrics that apply to EVERY PCAP
         overview_data = [
             {"Metric": "PCAP File Analyzed", "Value": pcap_filename},
             {"Metric": "Total Packets Processed", "Value": f"{len(df):,}"},
@@ -290,7 +309,7 @@ def process_and_split_data(raw_dataframe, final_csv_path, summary_excel_path, ca
             {"Metric": "Files Extracted", "Value": len(carved_files_df)}
         ]
         
-        # 2. Dynamically inject Threat Metrics ONLY if they were found!
+        # Dynamically inject Threat Metrics ONLY if they were found
         if len(beacons) > 0: overview_data.append({"Metric": "🚨 Suspected C2 Beacons", "Value": len(beacons)})
         if len(dns_anomalies) > 0: overview_data.append({"Metric": "🚨 DNS Anomalies (DGA)", "Value": len(dns_anomalies)})
         if len(port_scans) > 0: overview_data.append({"Metric": "🕵️ Port Scans Detected", "Value": len(port_scans)})
@@ -360,7 +379,8 @@ if __name__ == "__main__":
     parser.add_argument("-o", "--output", default="Traffic_Summaries.xlsx", help="Output Excel file")
     args = parser.parse_args()
     
-    input_pcap = args.input
+    input_pcap = unzip_pcap(args.input)
+
     final_raw_csv = "Raw_Traffic_Data.csv"
     
     if not os.path.exists(input_pcap):
@@ -370,10 +390,10 @@ if __name__ == "__main__":
     tshark_fields = load_fields_from_config(args.config)
     if not tshark_fields: exit()
     
-    # 1. Carve and Hash Files First
+    # Carve and Hash Files first
     carved_files_df = carve_and_hash_files(input_pcap)
     
-    # 2. Check File Size for Chunking (Threshold: 200MB)
+    # Check File Size for Chunking (Threshold: 200MB)
     file_size_mb = os.path.getsize(input_pcap) / (1024 * 1024)
     processed_csvs = []
     
@@ -392,7 +412,7 @@ if __name__ == "__main__":
         chunk_files = glob.glob(os.path.join(chunk_dir, "chunk*.pcap"))
         print(f"[*] PCAP split into {len(chunk_files)} chunks. Processing simultaneously across CPU cores...")
         
-        # Spin up parallel processes based on your CPU cores
+        # Spin up parallel processes based on available CPU cores
         with concurrent.futures.ProcessPoolExecutor() as executor:
             futures = []
             for i, chunk in enumerate(chunk_files):
@@ -411,7 +431,7 @@ if __name__ == "__main__":
         if extract_pcap_to_temp_csv(input_pcap, temp_csv, tshark_fields):
             processed_csvs.append(temp_csv)
 
-    # 3. Merge DataFrames and Generate Reports
+    # Merge DataFrames and Generate Reports
     if processed_csvs:
         print(f"[*] Merging {len(processed_csvs)} data segments...")
         # Read all chunks into Pandas and concatenate them
@@ -420,7 +440,7 @@ if __name__ == "__main__":
         
         process_and_split_data(master_df, final_raw_csv, args.output, carved_files_df, input_pcap)
         
-        # 4. Cleanup temporary files and chunk directories
+        # Cleanup temporary files and chunk directories
         for csv_file in processed_csvs:
             if os.path.exists(csv_file): os.remove(csv_file)
         if os.path.exists("pcap_chunks"):
